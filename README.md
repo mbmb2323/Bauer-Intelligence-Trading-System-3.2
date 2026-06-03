@@ -7,11 +7,11 @@ management program blueprint.
 ## Generate the final program
 
 ```bash
-python /tmp/workspace/mbmb2323/Bauer-Intelligence-Trading-System-3.2/wealth_management_program.py \
-  --scan-root /tmp/workspace/mbmb2323 \
+python wealth_management_program.py \
+  --scan-root /path/to/your/repos \
   --repo-name-contains Bauer \
   --repo-name-contains Raynman \
-  --output /tmp/workspace/mbmb2323/Bauer-Intelligence-Trading-System-3.2/final_wealth_management_program.md
+  --output ./final_wealth_management_program.md
 ```
 
 This creates a Markdown report with:

@@ -128,12 +128,13 @@ def generate_report(scan_root: Path, repo_name_contains: list[str]) -> str:
     lines.append("## Extracted Features by Repository")
     if not repo_features:
         lines.append("- No repository features available")
-    for repo, features in repo_features.items():
-        lines.append(f"### {repo}")
-        if features:
-            lines.extend(f"- {feature}" for feature in features)
-        else:
-            lines.append("- No qualifying features detected in README files")
+    else:
+        for repo, features in repo_features.items():
+            lines.append(f"### {repo}")
+            if features:
+                lines.extend(f"- {feature}" for feature in features)
+            else:
+                lines.append("- No qualifying features detected in README files")
     lines.append("")
 
     lines.append("## Consolidated Feature Set")

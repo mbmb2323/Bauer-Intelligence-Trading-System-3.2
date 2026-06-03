@@ -59,12 +59,15 @@ class WealthManagementProgramTests(unittest.TestCase):
                 "Risk allocation monitor",
                 "Live trading signal alert",
                 "Weekly analysis automation summary",
+                "Risk-aware execution strategy",
             ]
         )
 
         self.assertIn("Risk allocation monitor", daily_program["Pre-Market Planning"])
         self.assertIn("Live trading signal alert", daily_program["Market-Hours Monitoring"])
         self.assertIn("Weekly analysis automation summary", daily_program["Post-Market Review"])
+        self.assertIn("Risk-aware execution strategy", daily_program["Pre-Market Planning"])
+        self.assertIn("Risk-aware execution strategy", daily_program["Market-Hours Monitoring"])
 
 
 if __name__ == "__main__":

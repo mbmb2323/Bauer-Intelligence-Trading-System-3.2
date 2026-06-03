@@ -93,11 +93,13 @@ def build_daily_program(features: list[str]) -> dict[str, list[str]]:
     post_market: list[str] = []
     for feature in features:
         lowered = feature.lower()
-        if any(keyword in lowered for keyword in PRE_MARKET_KEYWORDS):
+        pre_market_match = any(keyword in lowered for keyword in PRE_MARKET_KEYWORDS)
+        market_hours_match = any(keyword in lowered for keyword in MARKET_HOURS_KEYWORDS)
+        if pre_market_match:
             pre_market.append(feature)
-        elif any(keyword in lowered for keyword in MARKET_HOURS_KEYWORDS):
+        if market_hours_match:
             market_hours.append(feature)
-        else:
+        if not pre_market_match and not market_hours_match:
             post_market.append(feature)
     return {
         "Pre-Market Planning": pre_market[:MAX_FEATURES_PER_SECTION],
@@ -172,7 +174,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--scan-root",
         type=Path,
-        default=Path.cwd().parent,
+        default=Path.cwd(),
         help="Root directory containing repositories to scan",
     )
     parser.add_argument(

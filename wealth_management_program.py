@@ -19,6 +19,11 @@ FEATURE_KEYWORDS = (
     "prediction",
     "execution",
 )
+MAX_FEATURES_PER_SECTION = 10
+
+
+def appears_to_be_code_or_path(text: str) -> bool:
+    return "```" in text or "/" in text or "\\" in text
 
 
 def find_git_repositories(scan_root: Path, repo_name_contains: list[str]) -> list[Path]:
@@ -48,7 +53,7 @@ def extract_candidate_features(text: str) -> list[str]:
         normalized = re.sub(r"^[\-\*\d\.\)\s]+", "", stripped).strip()
         if len(normalized) < 5:
             continue
-        if "```" in normalized or "/" in normalized or "\\" in normalized:
+        if appears_to_be_code_or_path(normalized):
             continue
         lowered = normalized.lower()
         if not any(keyword in lowered for keyword in FEATURE_KEYWORDS):
@@ -93,9 +98,9 @@ def build_daily_program(features: list[str]) -> dict[str, list[str]]:
         else:
             post_market.append(feature)
     return {
-        "Pre-Market Planning": pre_market[:10],
-        "Market-Hours Monitoring": market_hours[:10],
-        "Post-Market Review": post_market[:10],
+        "Pre-Market Planning": pre_market[:MAX_FEATURES_PER_SECTION],
+        "Market-Hours Monitoring": market_hours[:MAX_FEATURES_PER_SECTION],
+        "Post-Market Review": post_market[:MAX_FEATURES_PER_SECTION],
     }
 
 

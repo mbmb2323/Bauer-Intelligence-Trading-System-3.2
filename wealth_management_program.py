@@ -20,9 +20,11 @@ FEATURE_KEYWORDS = (
     "execution",
 )
 MAX_FEATURES_PER_SECTION = 10
+PRE_MARKET_KEYWORDS = ("risk", "allocation", "portfolio")
+MARKET_HOURS_KEYWORDS = ("execution", "signal", "alert", "trading")
 
 
-def appears_to_be_code_or_path(text: str) -> bool:
+def contains_code_block_or_path_separator(text: str) -> bool:
     return "```" in text or "/" in text or "\\" in text
 
 
@@ -53,7 +55,7 @@ def extract_candidate_features(text: str) -> list[str]:
         normalized = re.sub(r"^[\-\*\d\.\)\s]+", "", stripped).strip()
         if len(normalized) < 5:
             continue
-        if appears_to_be_code_or_path(normalized):
+        if contains_code_block_or_path_separator(normalized):
             continue
         lowered = normalized.lower()
         if not any(keyword in lowered for keyword in FEATURE_KEYWORDS):
@@ -91,9 +93,9 @@ def build_daily_program(features: list[str]) -> dict[str, list[str]]:
     post_market: list[str] = []
     for feature in features:
         lowered = feature.lower()
-        if "risk" in lowered or "allocation" in lowered or "portfolio" in lowered:
+        if any(keyword in lowered for keyword in PRE_MARKET_KEYWORDS):
             pre_market.append(feature)
-        elif "execution" in lowered or "signal" in lowered or "alert" in lowered or "trading" in lowered:
+        elif any(keyword in lowered for keyword in MARKET_HOURS_KEYWORDS):
             market_hours.append(feature)
         else:
             post_market.append(feature)

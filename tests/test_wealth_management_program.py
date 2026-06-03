@@ -2,7 +2,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from wealth_management_program import generate_report
+from wealth_management_program import build_daily_program, generate_report
 
 
 class WealthManagementProgramTests(unittest.TestCase):
@@ -52,6 +52,19 @@ class WealthManagementProgramTests(unittest.TestCase):
             self.assertIn("### Pre-Market Planning", report)
             self.assertIn("### Market-Hours Monitoring", report)
             self.assertIn("### Post-Market Review", report)
+
+    def test_build_daily_program_categorizes_features(self) -> None:
+        daily_program = build_daily_program(
+            [
+                "Risk allocation monitor",
+                "Live trading signal alert",
+                "Weekly analysis automation summary",
+            ]
+        )
+
+        self.assertIn("Risk allocation monitor", daily_program["Pre-Market Planning"])
+        self.assertIn("Live trading signal alert", daily_program["Market-Hours Monitoring"])
+        self.assertIn("Weekly analysis automation summary", daily_program["Post-Market Review"])
 
 
 if __name__ == "__main__":

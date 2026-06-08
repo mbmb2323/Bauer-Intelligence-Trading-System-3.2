@@ -118,7 +118,7 @@ def get_session() -> Session:
     return _SessionFactory()
 
 
-def get_engine():
+def get_engine() -> "Engine":
     """Return the SQLAlchemy engine."""
     if _engine is None:
         raise RuntimeError("Database not initialised. Call init_db() first.")

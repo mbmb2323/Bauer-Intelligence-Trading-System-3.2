@@ -2,10 +2,14 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import re
+from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
-FEATURE_KEYWORDS = (
+DEFAULT_FEATURE_KEYWORDS = (
     "feature",
     "trading",
     "strategy",
@@ -19,9 +23,173 @@ FEATURE_KEYWORDS = (
     "prediction",
     "execution",
 )
-MAX_FEATURES_PER_SECTION = 10
-PRE_MARKET_KEYWORDS = ("risk", "allocation", "portfolio")
-MARKET_HOURS_KEYWORDS = ("execution", "signal", "alert", "trading")
+DEFAULT_PRE_MARKET_KEYWORDS = ("risk", "allocation", "portfolio")
+DEFAULT_MARKET_HOURS_KEYWORDS = ("execution", "signal", "alert", "trading")
+DEFAULT_MAX_FEATURES_PER_SECTION = 10
+DEFAULT_MIN_FEATURE_LENGTH = 5
+LENGTH_BONUS_NORMALIZER = 80.0
+
+
+@dataclass(frozen=True)
+class RankingWeights:
+    keyword_hits: float = 1.0
+    category_hits: float = 0.75
+    length_bonus: float = 0.25
+
+
+@dataclass(frozen=True)
+class ProgramConfig:
+    feature_keywords: tuple[str, ...] = DEFAULT_FEATURE_KEYWORDS
+    pre_market_keywords: tuple[str, ...] = DEFAULT_PRE_MARKET_KEYWORDS
+    market_hours_keywords: tuple[str, ...] = DEFAULT_MARKET_HOURS_KEYWORDS
+    max_features_per_section: int = DEFAULT_MAX_FEATURES_PER_SECTION
+    min_feature_length: int = DEFAULT_MIN_FEATURE_LENGTH
+    include_quality_metrics: bool = True
+    ranking_weights: RankingWeights = RankingWeights()
+
+
+@dataclass(frozen=True)
+class FeatureScore:
+    feature: str
+    score: float
+    keyword_hits: int
+    category_hits: int
+    length_bonus: float
+
+
+def _split_csv_env(value: str | None) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    parts = tuple(item.strip().lower() for item in value.split(",") if item.strip())
+    return parts or None
+
+
+def _parse_bool(value: str | None) -> bool:
+    if value is None:
+        return False
+    lowered = value.strip().lower()
+    return lowered in {"1", "true", "yes", "y", "on"}
+
+
+def _load_user_config(config_path: Path | None) -> dict[str, Any]:
+    if config_path is None or not config_path.exists():
+        return {}
+    try:
+        with config_path.open("r", encoding="utf-8") as handle:
+            loaded = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def load_program_config(config_path: Path | None = None) -> ProgramConfig:
+    defaults: dict[str, Any] = {
+        "feature_keywords": DEFAULT_FEATURE_KEYWORDS,
+        "pre_market_keywords": DEFAULT_PRE_MARKET_KEYWORDS,
+        "market_hours_keywords": DEFAULT_MARKET_HOURS_KEYWORDS,
+        "max_features_per_section": DEFAULT_MAX_FEATURES_PER_SECTION,
+        "min_feature_length": DEFAULT_MIN_FEATURE_LENGTH,
+        "include_quality_metrics": True,
+        "ranking_weights": {
+            "keyword_hits": 1.0,
+            "category_hits": 0.75,
+            "length_bonus": 0.25,
+        },
+    }
+
+    user = _load_user_config(config_path)
+
+    merged: dict[str, Any] = defaults.copy()
+    for key in (
+        "feature_keywords",
+        "pre_market_keywords",
+        "market_hours_keywords",
+        "max_features_per_section",
+        "min_feature_length",
+        "include_quality_metrics",
+    ):
+        if key in user:
+            merged[key] = user[key]
+
+    user_weights = user.get("ranking_weights")
+    if isinstance(user_weights, dict):
+        merged["ranking_weights"] = {**merged["ranking_weights"], **user_weights}
+
+    env_feature_keywords = _split_csv_env(os.getenv("WMP_FEATURE_KEYWORDS"))
+    env_pre_market_keywords = _split_csv_env(os.getenv("WMP_PRE_MARKET_KEYWORDS"))
+    env_market_hours_keywords = _split_csv_env(os.getenv("WMP_MARKET_HOURS_KEYWORDS"))
+    if env_feature_keywords is not None:
+        merged["feature_keywords"] = env_feature_keywords
+    if env_pre_market_keywords is not None:
+        merged["pre_market_keywords"] = env_pre_market_keywords
+    if env_market_hours_keywords is not None:
+        merged["market_hours_keywords"] = env_market_hours_keywords
+
+    if os.getenv("WMP_MAX_FEATURES_PER_SECTION") is not None:
+        try:
+            merged["max_features_per_section"] = int(os.getenv("WMP_MAX_FEATURES_PER_SECTION"))
+        except ValueError:
+            pass
+
+    if os.getenv("WMP_MIN_FEATURE_LENGTH") is not None:
+        try:
+            merged["min_feature_length"] = int(os.getenv("WMP_MIN_FEATURE_LENGTH"))
+        except ValueError:
+            pass
+
+    if os.getenv("WMP_INCLUDE_QUALITY_METRICS") is not None:
+        merged["include_quality_metrics"] = _parse_bool(os.getenv("WMP_INCLUDE_QUALITY_METRICS"))
+
+    weight_overrides = {
+        "keyword_hits": os.getenv("WMP_WEIGHT_KEYWORD_HITS"),
+        "category_hits": os.getenv("WMP_WEIGHT_CATEGORY_HITS"),
+        "length_bonus": os.getenv("WMP_WEIGHT_LENGTH_BONUS"),
+    }
+    for key, value in weight_overrides.items():
+        if value is None:
+            continue
+        try:
+            merged["ranking_weights"][key] = float(value)
+        except ValueError:
+            continue
+
+    feature_keywords = tuple(str(item).strip().lower() for item in merged["feature_keywords"] if str(item).strip())
+    pre_market_keywords = tuple(str(item).strip().lower() for item in merged["pre_market_keywords"] if str(item).strip())
+    market_hours_keywords = tuple(str(item).strip().lower() for item in merged["market_hours_keywords"] if str(item).strip())
+
+    try:
+        max_features_per_section = int(merged["max_features_per_section"])
+    except (TypeError, ValueError):
+        max_features_per_section = DEFAULT_MAX_FEATURES_PER_SECTION
+
+    try:
+        min_feature_length = int(merged["min_feature_length"])
+    except (TypeError, ValueError):
+        min_feature_length = DEFAULT_MIN_FEATURE_LENGTH
+
+    if max_features_per_section <= 0:
+        max_features_per_section = DEFAULT_MAX_FEATURES_PER_SECTION
+    if min_feature_length < 1:
+        min_feature_length = DEFAULT_MIN_FEATURE_LENGTH
+
+    include_quality_metrics = bool(merged["include_quality_metrics"])
+
+    ranking_weights_dict = merged["ranking_weights"]
+    ranking_weights = RankingWeights(
+        keyword_hits=float(ranking_weights_dict.get("keyword_hits", 1.0)),
+        category_hits=float(ranking_weights_dict.get("category_hits", 0.75)),
+        length_bonus=float(ranking_weights_dict.get("length_bonus", 0.25)),
+    )
+
+    return ProgramConfig(
+        feature_keywords=feature_keywords or DEFAULT_FEATURE_KEYWORDS,
+        pre_market_keywords=pre_market_keywords or DEFAULT_PRE_MARKET_KEYWORDS,
+        market_hours_keywords=market_hours_keywords or DEFAULT_MARKET_HOURS_KEYWORDS,
+        max_features_per_section=max_features_per_section,
+        min_feature_length=min_feature_length,
+        include_quality_metrics=include_quality_metrics,
+        ranking_weights=ranking_weights,
+    )
 
 
 def contains_code_block_or_path_separator(text: str) -> bool:
@@ -42,23 +210,34 @@ def find_git_repositories(scan_root: Path, repo_name_contains: list[str]) -> lis
     return repos
 
 
-def extract_candidate_features(text: str) -> list[str]:
+def _normalize_list_item(line: str) -> str:
+    stripped = line.strip()
+    if re.match(r"^\s*[\-\*]\s+", stripped):
+        return re.sub(r"^\s*[\-\*]\s+", "", stripped).strip()
+    if re.match(r"^\s*\d+[.)]\s+", stripped):
+        return re.sub(r"^\s*\d+[.)]\s+", "", stripped).strip()
+    return stripped
+
+
+def _is_markdown_list_item(line: str) -> bool:
+    return bool(re.match(r"^\s*([\-\*]|\d+[.)])\s+", line))
+
+
+def extract_candidate_features(text: str, config: ProgramConfig | None = None) -> list[str]:
+    cfg = config or load_program_config()
     features: list[str] = []
     seen: set[str] = set()
     for raw_line in text.splitlines():
         line = raw_line.rstrip()
-        stripped = line.strip()
-        if not stripped:
+        if not line.strip() or not _is_markdown_list_item(line):
             continue
-        if not re.match(r"^\s*([\-\*]|\d+[.)])\s+", line):
-            continue
-        normalized = re.sub(r"^[\-\*\d\.\)\s]+", "", stripped).strip()
-        if len(normalized) < 5:
+        normalized = _normalize_list_item(line)
+        if len(normalized) < cfg.min_feature_length:
             continue
         if contains_code_block_or_path_separator(normalized):
             continue
         lowered = normalized.lower()
-        if not any(keyword in lowered for keyword in FEATURE_KEYWORDS):
+        if not any(keyword in lowered for keyword in cfg.feature_keywords):
             continue
         if lowered in seen:
             continue
@@ -67,7 +246,8 @@ def extract_candidate_features(text: str) -> list[str]:
     return features
 
 
-def collect_repo_features(repo_path: Path) -> list[str]:
+def collect_repo_features(repo_path: Path, config: ProgramConfig | None = None) -> list[str]:
+    cfg = config or load_program_config()
     features: list[str] = []
     readme_files = sorted(repo_path.glob("README*.md"))
     for readme in readme_files:
@@ -75,7 +255,7 @@ def collect_repo_features(repo_path: Path) -> list[str]:
             content = readme.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        features.extend(extract_candidate_features(content))
+        features.extend(extract_candidate_features(content, cfg))
     deduped: list[str] = []
     seen: set[str] = set()
     for item in features:
@@ -87,14 +267,42 @@ def collect_repo_features(repo_path: Path) -> list[str]:
     return deduped
 
 
-def build_daily_program(features: list[str]) -> dict[str, list[str]]:
+def rank_features(features: list[str], config: ProgramConfig | None = None) -> list[FeatureScore]:
+    cfg = config or load_program_config()
+    ranked: list[FeatureScore] = []
+    for feature in features:
+        lowered = feature.lower()
+        keyword_hits = sum(1 for keyword in cfg.feature_keywords if keyword in lowered)
+        category_hits = sum(1 for keyword in cfg.pre_market_keywords if keyword in lowered) + sum(
+            1 for keyword in cfg.market_hours_keywords if keyword in lowered
+        )
+        length_bonus = min(len(feature) / LENGTH_BONUS_NORMALIZER, 1.0)
+        score = (
+            keyword_hits * cfg.ranking_weights.keyword_hits
+            + category_hits * cfg.ranking_weights.category_hits
+            + length_bonus * cfg.ranking_weights.length_bonus
+        )
+        ranked.append(
+            FeatureScore(
+                feature=feature,
+                score=score,
+                keyword_hits=keyword_hits,
+                category_hits=category_hits,
+                length_bonus=length_bonus,
+            )
+        )
+    return sorted(ranked, key=lambda item: (-item.score, item.feature.lower()))
+
+
+def build_daily_program(features: list[str], config: ProgramConfig | None = None) -> dict[str, list[str]]:
+    cfg = config or load_program_config()
     pre_market: list[str] = []
     market_hours: list[str] = []
     post_market: list[str] = []
     for feature in features:
         lowered = feature.lower()
-        pre_market_match = any(keyword in lowered for keyword in PRE_MARKET_KEYWORDS)
-        market_hours_match = any(keyword in lowered for keyword in MARKET_HOURS_KEYWORDS)
+        pre_market_match = any(keyword in lowered for keyword in cfg.pre_market_keywords)
+        market_hours_match = any(keyword in lowered for keyword in cfg.market_hours_keywords)
         if pre_market_match:
             pre_market.append(feature)
         if market_hours_match:
@@ -102,18 +310,37 @@ def build_daily_program(features: list[str]) -> dict[str, list[str]]:
         if not pre_market_match and not market_hours_match:
             post_market.append(feature)
     return {
-        "Pre-Market Planning": pre_market[:MAX_FEATURES_PER_SECTION],
-        "Market-Hours Monitoring": market_hours[:MAX_FEATURES_PER_SECTION],
-        "Post-Market Review": post_market[:MAX_FEATURES_PER_SECTION],
+        "Pre-Market Planning": pre_market[: cfg.max_features_per_section],
+        "Market-Hours Monitoring": market_hours[: cfg.max_features_per_section],
+        "Post-Market Review": post_market[: cfg.max_features_per_section],
     }
 
 
-def generate_report(scan_root: Path, repo_name_contains: list[str]) -> str:
-    repos = find_git_repositories(scan_root, repo_name_contains)
-    repo_features: dict[str, list[str]] = {}
-    for repo in repos:
-        repo_features[repo.name] = collect_repo_features(repo)
+def evaluate_extraction_quality(
+    consolidated: list[str],
+    daily_program: dict[str, list[str]],
+    ranked_features: list[FeatureScore],
+) -> dict[str, float]:
+    total_features = len(consolidated)
+    categorized_features: set[str] = set()
+    for values in daily_program.values():
+        categorized_features.update(value.lower() for value in values)
+    consolidated_unique = {value.lower() for value in consolidated}
+    coverage = (len(categorized_features) / len(consolidated_unique)) if consolidated_unique else 0.0
+    avg_score = (sum(item.score for item in ranked_features) / total_features) if total_features else 0.0
+    top_score = ranked_features[0].score if ranked_features else 0.0
+    bottom_score = ranked_features[-1].score if ranked_features else 0.0
 
+    return {
+        "total_features": float(total_features),
+        "categorized_coverage": coverage,
+        "average_ensemble_score": avg_score,
+        "top_ensemble_score": top_score,
+        "bottom_ensemble_score": bottom_score,
+    }
+
+
+def _consolidate_features(repo_features: dict[str, list[str]]) -> list[str]:
     consolidated: list[str] = []
     seen: set[str] = set()
     for features in repo_features.values():
@@ -123,8 +350,20 @@ def generate_report(scan_root: Path, repo_name_contains: list[str]) -> str:
                 continue
             seen.add(lowered)
             consolidated.append(feature)
+    return consolidated
 
-    daily_program = build_daily_program(consolidated)
+
+def generate_report(scan_root: Path, repo_name_contains: list[str], config: ProgramConfig | None = None) -> str:
+    cfg = config or load_program_config()
+    repos = find_git_repositories(scan_root, repo_name_contains)
+    repo_features: dict[str, list[str]] = {}
+    for repo in repos:
+        repo_features[repo.name] = collect_repo_features(repo, cfg)
+
+    consolidated = _consolidate_features(repo_features)
+    ranked_features = rank_features(consolidated, cfg)
+    daily_program = build_daily_program([item.feature for item in ranked_features], cfg)
+    quality = evaluate_extraction_quality(consolidated, daily_program, ranked_features)
 
     lines: list[str] = ["# Final Wealth Management Program", ""]
     lines.append("## Repositories Scanned")
@@ -153,6 +392,16 @@ def generate_report(scan_root: Path, repo_name_contains: list[str]) -> str:
         lines.append("- No consolidated features available")
     lines.append("")
 
+    lines.append("## Ensemble Ranking Diagnostics")
+    if ranked_features:
+        for item in ranked_features[: cfg.max_features_per_section]:
+            lines.append(
+                f"- {item.feature} (score={item.score:.2f}, keywords={item.keyword_hits}, categories={item.category_hits}, length_bonus={item.length_bonus:.2f})"
+            )
+    else:
+        lines.append("- No ranking diagnostics available")
+    lines.append("")
+
     lines.append("## Daily Operating Program")
     for section, items in daily_program.items():
         lines.append(f"### {section}")
@@ -161,6 +410,16 @@ def generate_report(scan_root: Path, repo_name_contains: list[str]) -> str:
         else:
             lines.append("- Use discretionary review until additional features are extracted")
     lines.append("")
+
+    if cfg.include_quality_metrics:
+        lines.append("## Extraction Quality Backtest")
+        lines.append(f"- Total Features: {int(quality['total_features'])}")
+        lines.append(f"- Categorized Coverage: {quality['categorized_coverage']:.2%}")
+        lines.append(f"- Average Ensemble Score: {quality['average_ensemble_score']:.2f}")
+        lines.append(f"- Top Ensemble Score: {quality['top_ensemble_score']:.2f}")
+        lines.append(f"- Bottom Ensemble Score: {quality['bottom_ensemble_score']:.2f}")
+        lines.append("")
+
     return "\n".join(lines)
 
 
@@ -184,6 +443,17 @@ def parse_args() -> argparse.Namespace:
         help="Optional repository name filter (can be repeated)",
     )
     parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Optional JSON config file (precedence: env > file > defaults)",
+    )
+    parser.add_argument(
+        "--no-quality-metrics",
+        action="store_true",
+        help="Disable extraction quality backtest section in report output",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path.cwd() / "final_wealth_management_program.md",
@@ -194,7 +464,10 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    report = generate_report(args.scan_root, args.repo_name_contains)
+    config = load_program_config(args.config)
+    if args.no_quality_metrics:
+        config = replace(config, include_quality_metrics=False)
+    report = generate_report(args.scan_root, args.repo_name_contains, config)
     args.output.write_text(report, encoding="utf-8")
     print(f"Report generated: {args.output}")
     return 0

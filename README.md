@@ -23,6 +23,8 @@ A Python CLI tool that scans local Git repositories, extracts wealth-management 
 python wealth_management_program.py \
   [--scan-root DIR] \
   [--repo-name-contains FILTER] ... \
+  [--config FILE.json] \
+  [--no-quality-metrics] \
   [--output FILE]
 ```
 
@@ -32,6 +34,8 @@ python wealth_management_program.py \
 |---|---|---|
 | `--scan-root DIR` | Current working directory | Root directory to search for Git repositories |
 | `--repo-name-contains FILTER` | *(none — all repos matched)* | Filter repos whose names contain this string (case-insensitive). Can be repeated to allow multiple filters. |
+| `--config FILE.json` | *(none)* | Optional JSON configuration file. |
+| `--no-quality-metrics` | `false` | Disable quality backtest metrics section in output. |
 | `--output FILE` | `./final_wealth_management_program.md` | Output Markdown file path |
 
 ### Example
@@ -50,15 +54,17 @@ This scans all subdirectories of `/path/to/your/repos` that contain a `.git` fol
 
 ## Output Format
 
-The generated Markdown file contains four sections:
+The generated Markdown file contains six sections:
 
 1. **Repositories Scanned** — a list of matched repository names.
 2. **Extracted Features by Repository** — bullet-point features pulled from each repository's `README.md` files.
 3. **Consolidated Feature Set** — a deduplicated union of all per-repository features.
-4. **Daily Operating Program** — features organized into three time-of-day sections (up to 10 items each):
+4. **Ensemble Ranking Diagnostics** — ranked feature list with score and component breakdown.
+5. **Daily Operating Program** — features organized into three time-of-day sections (up to 10 items each):
    - **Pre-Market Planning** — items containing: `risk`, `allocation`, or `portfolio`
    - **Market-Hours Monitoring** — items containing: `execution`, `signal`, `alert`, or `trading`
    - **Post-Market Review** — remaining items not matched by either category above
+6. **Extraction Quality Backtest** *(optional)* — score and coverage metrics for extraction/ranking reliability.
 
 > Note: A single feature can appear in both Pre-Market Planning and Market-Hours Monitoring if it matches keywords from both categories.
 
@@ -77,6 +83,30 @@ Duplicate lines (compared case-insensitively) are discarded within and across re
 
 ---
 
+## Configuration Precedence
+
+Configuration is loaded in deterministic order:
+
+1. **Defaults** (built-in)
+2. **User config file** passed via `--config`
+3. **Environment variables** (highest precedence)
+
+Supported environment overrides include:
+
+- `WMP_FEATURE_KEYWORDS`
+- `WMP_PRE_MARKET_KEYWORDS`
+- `WMP_MARKET_HOURS_KEYWORDS`
+- `WMP_MAX_FEATURES_PER_SECTION`
+- `WMP_MIN_FEATURE_LENGTH`
+- `WMP_INCLUDE_QUALITY_METRICS`
+- `WMP_WEIGHT_KEYWORD_HITS`
+- `WMP_WEIGHT_CATEGORY_HITS`
+- `WMP_WEIGHT_LENGTH_BONUS`
+
+Keyword environment values use comma-separated lists.
+
+---
+
 ## Running the Tests
 
 Using `pytest`:
@@ -86,7 +116,7 @@ python -m pytest tests/
 
 Using the standard library:
 ```bash
-python -m unittest discover tests
+python -m unittest discover -s tests -v
 ```
 
 The test suite (`tests/test_wealth_management_program.py`) covers:

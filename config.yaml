@@ -61,7 +61,7 @@ features:
 
 models:
   screener:
-    algorithm: "lightgbm"                  # lightgbm | xgboost
+    algorithm: "lightgbm"                  # lightgbm (code falls back to random forest if unavailable)
     num_leaves: 63
     n_estimators: 200
     learning_rate: 0.05
@@ -75,7 +75,7 @@ models:
     n_estimators: 300
     learning_rate: 0.03
   regime:
-    algorithm: "kmeans"                    # kmeans | hmm
+    algorithm: "kmeans"                    # kmeans
     n_regimes: 4                           # bull, bear, sideways, volatile
     random_state: 42
   registry:

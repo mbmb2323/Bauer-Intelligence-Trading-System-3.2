@@ -24,27 +24,27 @@ def main() -> int:
     if args.command == "screen":
         from bits.screener.export import cli as screener_cli
 
-        return screener_cli()
+        return screener_cli(sys.argv[2:])
     elif args.command == "backtest":
         from bits.strategy.backtester import cli as backtest_cli
 
-        return backtest_cli()
+        return backtest_cli(sys.argv[2:])
     elif args.command == "trade":
         from bits.execution.portfolio import cli as trade_cli
 
-        return trade_cli()
+        return trade_cli(sys.argv[2:])
     elif args.command == "dashboard":
         from bits.analytics.terminal import cli as dashboard_cli
 
-        return dashboard_cli()
+        return dashboard_cli(sys.argv[2:])
     elif args.command == "ingest":
         from bits.data.pipeline import cli as ingest_cli
 
-        return ingest_cli()
+        return ingest_cli(sys.argv[2:])
     elif args.command == "train":
         from bits.models.registry import cli as train_cli
 
-        return train_cli()
+        return train_cli(sys.argv[2:])
     else:
         parser.print_help()
         return 0

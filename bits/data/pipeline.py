@@ -31,7 +31,6 @@ def run_ingestion(config: dict[str, Any]) -> dict[str, int]:
     tickers: list[str] = config.get("universe", {}).get("tickers", [])
     lookback: int = config.get("data", {}).get("lookback_days", 365)
     interval: str = config.get("data", {}).get("bar_size", "1d")
-    news_hours: int = config.get("data", {}).get("news_max_age_hours", 24)
 
     total_bars = 0
     total_news = 0
@@ -79,19 +78,22 @@ def start_scheduler(config: dict[str, Any]) -> None:
         logger.error("APScheduler not installed. Run: pip install apscheduler")
         return
 
-    cron_expr = config.get("data", {}).get("schedule_cron", "0 7 * * 1-5")
-    parts = cron_expr.split()
+    cron_expr = str(config.get("data", {}).get("schedule_cron", "0 7 * * 1-5")).strip()
+    try:
+        trigger = CronTrigger.from_crontab(cron_expr, timezone="America/New_York")
+    except ValueError as exc:
+        logger.error(
+            "Invalid schedule_cron '%s': %s. Expected format: minute hour day month day_of_week "
+            '(e.g., "0 7 * * 1-5")',
+            cron_expr,
+            exc,
+        )
+        return
 
     scheduler = BlockingScheduler(timezone="America/New_York")
     scheduler.add_job(
         run_ingestion,
-        CronTrigger(
-            minute=parts[0],
-            hour=parts[1],
-            day=parts[2],
-            month=parts[3],
-            day_of_week=parts[4],
-        ),
+        trigger,
         args=[config],
         id="data_ingestion",
         replace_existing=True,
@@ -100,17 +102,16 @@ def start_scheduler(config: dict[str, Any]) -> None:
     scheduler.start()
 
 
-def cli() -> int:
+def cli(argv: list[str] | None = None) -> int:
     """CLI entry point for manual ingestion."""
     import argparse  # noqa: PLC0415
-    import sys  # noqa: PLC0415
 
     from bits.config.settings import load_config  # noqa: PLC0415
 
     parser = argparse.ArgumentParser(description="Run BITS data ingestion")
     parser.add_argument("--config", default="config.yaml", help="Config file path")
     parser.add_argument("--schedule", action="store_true", help="Start scheduled ingestion")
-    args = parser.parse_args()
+    args = parser.parse_args(argv or None)
 
     cfg = load_config(args.config)
 

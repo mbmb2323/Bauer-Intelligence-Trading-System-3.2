@@ -158,7 +158,8 @@ def cli(argv: list[str] | None = None) -> int:
         save_model(model, "screener", config)
         return 0
 
-    ohlcv_df = load_ohlcv(args.ticker)
+    interval = str(config.get("data", {}).get("bar_size", "1d"))
+    ohlcv_df = load_ohlcv(args.ticker, interval=interval)
     if ohlcv_df.empty:
         logger.error("No OHLCV data available for regime training")
         return 1

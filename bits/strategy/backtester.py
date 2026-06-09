@@ -3,10 +3,8 @@ from __future__ import annotations
 import argparse
 import logging
 import math
-import sys
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
 from bits.config.settings import get_database_url, get_tickers, load_config
@@ -36,9 +34,10 @@ def _portfolio_metrics(equity_curve: pd.Series, daily_returns: pd.Series, n_trad
 
 def backtest(tickers: list[str], config: dict[str, Any]) -> dict[str, float]:
     init_db(get_database_url(config))
+    interval = str(config.get("data", {}).get("bar_size", "1d"))
     frames: dict[str, pd.Series] = {}
     for ticker in tickers:
-        df = load_ohlcv(ticker)
+        df = load_ohlcv(ticker, interval=interval)
         if not df.empty and "close" in df.columns:
             frames[ticker] = df["close"].astype(float)
     if not frames:
@@ -83,7 +82,7 @@ def backtest(tickers: list[str], config: dict[str, Any]) -> dict[str, float]:
 def cli(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the BITS backtester")
     parser.add_argument("--config", default="config.yaml", help="Config file path")
-    args = parser.parse_args(sys.argv[2:] if argv is None else argv)
+    args = parser.parse_args(argv or None)
 
     config = load_config(args.config)
     results = backtest(get_tickers(config), config)

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sys
 from pathlib import Path
 
 import pandas as pd
@@ -33,7 +32,7 @@ def cli(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", default="config.yaml", help="Config file path")
     parser.add_argument("--csv", help="CSV export path")
     parser.add_argument("--html", help="HTML export path")
-    args = parser.parse_args(sys.argv[2:] if argv is None else argv)
+    args = parser.parse_args(argv or None)
 
     config = load_config(args.config)
     result = run_screener(config)

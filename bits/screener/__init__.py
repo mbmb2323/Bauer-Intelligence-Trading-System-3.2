@@ -6,7 +6,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import func
 
 from bits.config.settings import get_database_url, get_tickers
 from bits.data.ingestion import load_ohlcv
@@ -68,13 +67,14 @@ def _build_feature_frame(config: dict[str, Any]) -> pd.DataFrame:
     if not tickers:
         return pd.DataFrame()
 
-    benchmark_df = load_ohlcv("SPY")
+    interval = str(config.get("data", {}).get("bar_size", "1d"))
+    benchmark_df = load_ohlcv("SPY", interval=interval)
     runtime_config = dict(config)
     runtime_config["runtime"] = {**config.get("runtime", {}), "spy_returns": benchmark_df.get("close", pd.Series(dtype=float)).pct_change().dropna()}
 
     rows: list[dict[str, Any]] = []
     for ticker in tickers:
-        df = load_ohlcv(ticker)
+        df = load_ohlcv(ticker, interval=interval)
         if df.empty:
             continue
         fundamentals = _latest_fundamentals(ticker)

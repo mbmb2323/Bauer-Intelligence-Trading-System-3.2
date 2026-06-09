@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sys
 import time
 from typing import Any
 
@@ -39,7 +38,7 @@ def cli(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Render the BITS screener dashboard")
     parser.add_argument("--config", default="config.yaml", help="Config file path")
     parser.add_argument("--refresh", type=int, help="Refresh interval in seconds")
-    args = parser.parse_args(sys.argv[2:] if argv is None else argv)
+    args = parser.parse_args(argv or None)
 
     config = load_config(args.config)
     refresh = args.refresh

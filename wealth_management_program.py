@@ -5,7 +5,7 @@ import argparse
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +25,9 @@ DEFAULT_FEATURE_KEYWORDS = (
 )
 DEFAULT_PRE_MARKET_KEYWORDS = ("risk", "allocation", "portfolio")
 DEFAULT_MARKET_HOURS_KEYWORDS = ("execution", "signal", "alert", "trading")
+DEFAULT_MAX_FEATURES_PER_SECTION = 10
+DEFAULT_MIN_FEATURE_LENGTH = 5
+LENGTH_BONUS_NORMALIZER = 80.0
 
 
 @dataclass(frozen=True)
@@ -39,8 +42,8 @@ class ProgramConfig:
     feature_keywords: tuple[str, ...] = DEFAULT_FEATURE_KEYWORDS
     pre_market_keywords: tuple[str, ...] = DEFAULT_PRE_MARKET_KEYWORDS
     market_hours_keywords: tuple[str, ...] = DEFAULT_MARKET_HOURS_KEYWORDS
-    max_features_per_section: int = 10
-    min_feature_length: int = 5
+    max_features_per_section: int = DEFAULT_MAX_FEATURES_PER_SECTION
+    min_feature_length: int = DEFAULT_MIN_FEATURE_LENGTH
     include_quality_metrics: bool = True
     ranking_weights: RankingWeights = RankingWeights()
 
@@ -61,7 +64,9 @@ def _split_csv_env(value: str | None) -> tuple[str, ...] | None:
     return parts or None
 
 
-def _parse_bool(value: str) -> bool:
+def _parse_bool(value: str | None) -> bool:
+    if value is None:
+        return False
     lowered = value.strip().lower()
     return lowered in {"1", "true", "yes", "y", "on"}
 
@@ -82,8 +87,8 @@ def load_program_config(config_path: Path | None = None) -> ProgramConfig:
         "feature_keywords": DEFAULT_FEATURE_KEYWORDS,
         "pre_market_keywords": DEFAULT_PRE_MARKET_KEYWORDS,
         "market_hours_keywords": DEFAULT_MARKET_HOURS_KEYWORDS,
-        "max_features_per_section": 10,
-        "min_feature_length": 5,
+        "max_features_per_section": DEFAULT_MAX_FEATURES_PER_SECTION,
+        "min_feature_length": DEFAULT_MIN_FEATURE_LENGTH,
         "include_quality_metrics": True,
         "ranking_weights": {
             "keyword_hits": 1.0,
@@ -122,18 +127,18 @@ def load_program_config(config_path: Path | None = None) -> ProgramConfig:
 
     if os.getenv("WMP_MAX_FEATURES_PER_SECTION") is not None:
         try:
-            merged["max_features_per_section"] = int(os.getenv("WMP_MAX_FEATURES_PER_SECTION", "10"))
+            merged["max_features_per_section"] = int(os.getenv("WMP_MAX_FEATURES_PER_SECTION"))
         except ValueError:
             pass
 
     if os.getenv("WMP_MIN_FEATURE_LENGTH") is not None:
         try:
-            merged["min_feature_length"] = int(os.getenv("WMP_MIN_FEATURE_LENGTH", "5"))
+            merged["min_feature_length"] = int(os.getenv("WMP_MIN_FEATURE_LENGTH"))
         except ValueError:
             pass
 
     if os.getenv("WMP_INCLUDE_QUALITY_METRICS") is not None:
-        merged["include_quality_metrics"] = _parse_bool(os.getenv("WMP_INCLUDE_QUALITY_METRICS", "true"))
+        merged["include_quality_metrics"] = _parse_bool(os.getenv("WMP_INCLUDE_QUALITY_METRICS"))
 
     weight_overrides = {
         "keyword_hits": os.getenv("WMP_WEIGHT_KEYWORD_HITS"),
@@ -152,13 +157,20 @@ def load_program_config(config_path: Path | None = None) -> ProgramConfig:
     pre_market_keywords = tuple(str(item).strip().lower() for item in merged["pre_market_keywords"] if str(item).strip())
     market_hours_keywords = tuple(str(item).strip().lower() for item in merged["market_hours_keywords"] if str(item).strip())
 
-    max_features_per_section = merged["max_features_per_section"]
-    min_feature_length = merged["min_feature_length"]
+    try:
+        max_features_per_section = int(merged["max_features_per_section"])
+    except (TypeError, ValueError):
+        max_features_per_section = DEFAULT_MAX_FEATURES_PER_SECTION
 
-    if not isinstance(max_features_per_section, int) or max_features_per_section <= 0:
-        max_features_per_section = 10
-    if not isinstance(min_feature_length, int) or min_feature_length < 1:
-        min_feature_length = 5
+    try:
+        min_feature_length = int(merged["min_feature_length"])
+    except (TypeError, ValueError):
+        min_feature_length = DEFAULT_MIN_FEATURE_LENGTH
+
+    if max_features_per_section <= 0:
+        max_features_per_section = DEFAULT_MAX_FEATURES_PER_SECTION
+    if min_feature_length < 1:
+        min_feature_length = DEFAULT_MIN_FEATURE_LENGTH
 
     include_quality_metrics = bool(merged["include_quality_metrics"])
 
@@ -200,7 +212,11 @@ def find_git_repositories(scan_root: Path, repo_name_contains: list[str]) -> lis
 
 def _normalize_list_item(line: str) -> str:
     stripped = line.strip()
-    return re.sub(r"^[\-\*\d\.\)\s]+", "", stripped).strip()
+    if re.match(r"^\s*[\-\*]\s+", stripped):
+        return re.sub(r"^\s*[\-\*]\s+", "", stripped).strip()
+    if re.match(r"^\s*\d+[.)]\s+", stripped):
+        return re.sub(r"^\s*\d+[.)]\s+", "", stripped).strip()
+    return stripped
 
 
 def _is_markdown_list_item(line: str) -> bool:
@@ -260,7 +276,7 @@ def rank_features(features: list[str], config: ProgramConfig | None = None) -> l
         category_hits = sum(1 for keyword in cfg.pre_market_keywords if keyword in lowered) + sum(
             1 for keyword in cfg.market_hours_keywords if keyword in lowered
         )
-        length_bonus = min(len(feature) / 80.0, 1.0)
+        length_bonus = min(len(feature) / LENGTH_BONUS_NORMALIZER, 1.0)
         score = (
             keyword_hits * cfg.ranking_weights.keyword_hits
             + category_hits * cfg.ranking_weights.category_hits
@@ -309,8 +325,8 @@ def evaluate_extraction_quality(
     categorized_features: set[str] = set()
     for values in daily_program.values():
         categorized_features.update(value.lower() for value in values)
-
-    coverage = (len(categorized_features) / total_features) if total_features else 0.0
+    consolidated_unique = {value.lower() for value in consolidated}
+    coverage = (len(categorized_features) / len(consolidated_unique)) if consolidated_unique else 0.0
     avg_score = (sum(item.score for item in ranked_features) / total_features) if total_features else 0.0
     top_score = ranked_features[0].score if ranked_features else 0.0
     bottom_score = ranked_features[-1].score if ranked_features else 0.0
@@ -380,9 +396,7 @@ def generate_report(scan_root: Path, repo_name_contains: list[str], config: Prog
     if ranked_features:
         for item in ranked_features[: cfg.max_features_per_section]:
             lines.append(
-                "- "
-                f"{item.feature} "
-                f"(score={item.score:.2f}, keywords={item.keyword_hits}, categories={item.category_hits}, length_bonus={item.length_bonus:.2f})"
+                f"- {item.feature} (score={item.score:.2f}, keywords={item.keyword_hits}, categories={item.category_hits}, length_bonus={item.length_bonus:.2f})"
             )
     else:
         lines.append("- No ranking diagnostics available")
@@ -452,15 +466,7 @@ def main() -> int:
     args = parse_args()
     config = load_program_config(args.config)
     if args.no_quality_metrics:
-        config = ProgramConfig(
-            feature_keywords=config.feature_keywords,
-            pre_market_keywords=config.pre_market_keywords,
-            market_hours_keywords=config.market_hours_keywords,
-            max_features_per_section=config.max_features_per_section,
-            min_feature_length=config.min_feature_length,
-            include_quality_metrics=False,
-            ranking_weights=config.ranking_weights,
-        )
+        config = replace(config, include_quality_metrics=False)
     report = generate_report(args.scan_root, args.repo_name_contains, config)
     args.output.write_text(report, encoding="utf-8")
     print(f"Report generated: {args.output}")

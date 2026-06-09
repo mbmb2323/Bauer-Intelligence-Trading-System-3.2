@@ -1,0 +1,155 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Bauer Intelligence Trading System 3.2 – Master Configuration
+# Override any value with a matching env-var (see .env.example)
+# ─────────────────────────────────────────────────────────────────────────────
+
+universe:
+  # Comma-separated tickers or a path to a text file (one ticker per line)
+  tickers:
+    - AAPL
+    - MSFT
+    - GOOGL
+    - AMZN
+    - NVDA
+    - META
+    - TSLA
+    - JPM
+    - V
+    - JNJ
+    - UNH
+    - XOM
+    - PG
+    - HD
+    - MA
+    - DIS
+    - NFLX
+    - ADBE
+    - CRM
+    - PYPL
+  market: "US"
+
+data:
+  database_url: "sqlite:///bits.db"       # swap to postgresql+psycopg2:// in prod
+  lookback_days: 365
+  bar_size: "1d"                           # yfinance interval: 1d, 1h, 15m …
+  news_max_age_hours: 24
+  schedule_cron: "0 7 * * 1-5"            # 07:00 Mon–Fri (market pre-open)
+
+features:
+  technical:
+    rsi_period: 14
+    macd_fast: 12
+    macd_slow: 26
+    macd_signal: 9
+    bb_period: 20
+    bb_std: 2.0
+    atr_period: 14
+    vwap_enabled: true
+    obv_enabled: true
+  statistical:
+    zscore_window: 20
+    momentum_windows: [5, 10, 20, 60]
+    correlation_window: 60
+  fundamental:
+    enabled: true
+  sentiment:
+    enabled: true
+    vader_compound_threshold: 0.05
+  store:
+    path: "feature_store/"
+    keep_versions: 10
+
+models:
+  screener:
+    algorithm: "lightgbm"                  # lightgbm (code falls back to random forest if unavailable)
+    num_leaves: 63
+    n_estimators: 200
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+    random_state: 42
+    labels: ["momentum", "quality", "value", "sentiment"]
+  predictor:
+    algorithm: "lightgbm_ranker"
+    forward_returns: [5, 10, 20]
+    n_estimators: 300
+    learning_rate: 0.03
+  regime:
+    algorithm: "kmeans"                    # kmeans
+    n_regimes: 4                           # bull, bear, sideways, volatile
+    random_state: 42
+  registry:
+    mlflow_tracking_uri: "mlruns/"
+    experiment_name: "BITS-3.2"
+  validation:
+    n_splits: 5
+    test_size: 63                          # trading days
+
+screener:
+  top_n: 20
+  weights:
+    momentum: 0.30
+    quality: 0.20
+    value: 0.20
+    ml_alpha: 0.30
+  min_composite_score: 0.0
+  export:
+    csv_path: "screener_output.csv"
+    html_path: "screener_output.html"
+
+strategy:
+  signal_confidence_threshold: 0.55
+  position_side: "long_only"              # long_only | long_short
+  backtester:
+    initial_capital: 100000.0
+    commission_bps: 5                     # basis points per trade
+    slippage_bps: 2
+  risk:
+    max_position_pct: 0.10               # max 10 % of portfolio per position
+    max_sector_pct: 0.30                 # max 30 % in one sector
+    max_portfolio_drawdown: 0.15         # circuit-breaker at -15 %
+    position_sizing: "volatility_target" # kelly | fixed_fractional | volatility_target
+    volatility_target: 0.15             # annual vol target
+    kelly_fraction: 0.25               # fractional Kelly
+
+execution:
+  broker: "alpaca"                        # alpaca | ib | paper
+  paper_trading: true
+  alpaca:
+    base_url: "https://paper-api.alpaca.markets"
+    api_key: ""                           # set via ALPACA_API_KEY env-var
+    api_secret: ""                        # set via ALPACA_API_SECRET env-var
+  ib:
+    host: "127.0.0.1"
+    port: 7497
+    client_id: 1
+  order_defaults:
+    type: "limit"                         # market | limit | trailing_stop
+    time_in_force: "day"
+    trailing_stop_pct: 0.02
+
+analytics:
+  terminal:
+    refresh_seconds: 5
+    max_rows: 20
+  dashboard:
+    port: 8501
+    host: "0.0.0.0"
+  alerts:
+    slack_webhook_url: ""                 # set via SLACK_WEBHOOK_URL env-var
+    email:
+      smtp_host: ""
+      smtp_port: 587
+      from_address: ""
+      to_addresses: []
+
+logging:
+  level: "INFO"                           # DEBUG | INFO | WARNING | ERROR
+  rotation: "10 MB"
+  retention: "1 month"
+  log_file: "logs/bits.log"
+
+observability:
+  prometheus:
+    enabled: false
+    port: 9090

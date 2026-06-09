@@ -1,0 +1,84 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bits"
+version = "3.2.0"
+description = "Bauer Intelligence Trading System – ML-powered stock screener and algo trader"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    # data
+    "yfinance>=0.2.40",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "apscheduler>=3.10",
+    "feedparser>=6.0",
+    "requests>=2.31",
+    # features
+    "ta>=0.11",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "scipy>=1.13",
+    # NLP
+    "vaderSentiment>=3.3",
+    # ML
+    "lightgbm>=4.6.0",
+    "scikit-learn>=1.5",
+    "mlflow>=3.11.0",
+    "joblib>=1.4",
+    # strategy / backtesting
+    "vectorbt>=0.26",
+    # execution
+    "alpaca-py>=0.29",
+    "ib_insync>=0.9",
+    "websocket-client>=1.8",
+    # analytics
+    "rich>=13.7",
+    "streamlit>=1.35",
+    "plotly>=5.22",
+    # config / logging
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+    "loguru>=0.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "pytest-mock>=3.14",
+    "types-PyYAML",
+    "types-requests",
+]
+
+[project.scripts]
+bits = "bits.__main__:main"
+bits-screener = "bits.screener.export:cli"
+bits-backtest = "bits.strategy.backtester:cli"
+bits-dashboard = "bits.analytics.terminal:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bits*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = false
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
